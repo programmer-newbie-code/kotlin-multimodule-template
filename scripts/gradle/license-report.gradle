@@ -1,0 +1,70 @@
+// License compliance reporting configuration
+apply plugin: 'com.github.jk1.dependency-license-report'
+
+licenseReport {
+  // Use default renderers - the plugin will automatically provide CSV, JSON, and HTML
+  // No need to specify renderers explicitly when using defaults
+
+  // Exclude test dependencies from license report
+  excludeGroups = ['org.testng', 'io.mockk']
+
+  // Additional exclusions for common test and build-time dependencies
+  excludes = [
+    // Test frameworks
+    'junit:junit',
+    'org.junit.jupiter:junit-jupiter',
+    'org.mockito:mockito-core',
+    'org.testcontainers:testcontainers',
+
+    // Build tools
+    'org.gradle:gradle-core',
+    'org.jetbrains.kotlin:kotlin-gradle-plugin',
+
+    // IDE and development tools
+    'org.jetbrains:annotations'
+  ]
+
+  // Output directory for license reports
+  outputDir = "$buildDir/reports/dependency-license"
+
+  // Include only runtime dependencies in the report
+  configurations = ['runtimeClasspath']
+}
+
+// Task to validate license compliance
+task validateLicenseCompliance {
+  dependsOn generateLicenseReport
+
+  doLast {
+    def reportFile = file("$buildDir/reports/dependency-license/licenses.csv")
+    if (reportFile.exists()) {
+      def problematicLicenses = []
+      reportFile.eachLine { line ->
+        // Check for common problematic licenses (customize as needed)
+        if (line.contains('GPL-3.0') || line.contains('AGPL') || line.contains('No license found')) {
+          problematicLicenses.add(line)
+        }
+      }
+
+      if (!problematicLicenses.empty) {
+        println "⚠️  Potentially problematic licenses detected:"
+        problematicLicenses.each { println "  - $it" }
+        println "\nReview these licenses and add suppressions if they are acceptable."
+      } else {
+        println "✅ All dependency licenses appear to be compliant."
+      }
+    }
+  }
+}
+
+// Task to print license report configuration - useful for debugging
+task printLicenseReportConfig {
+  doLast {
+    println "License Report Configuration for ${project.name}:"
+    println "  - Output Directory: ${licenseReport.outputDir}"
+    println "  - Configurations: ${licenseReport.configurations}"
+    println "  - Excluded Groups: ${licenseReport.excludeGroups}"
+    println "  - Excluded Dependencies: ${licenseReport.excludes.size()} items"
+    println "  - Renderers: ${licenseReport.renderers.size()} formats"
+  }
+}

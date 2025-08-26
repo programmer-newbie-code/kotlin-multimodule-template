@@ -1,0 +1,47 @@
+tasks.register('resolveAndLockAll') {
+  description = 'Resolves and locks all project dependencies'
+  group = 'dependency locking'
+
+  doFirst {
+    println "Resolving and locking all project dependencies..."
+    boolean writeLocks = project.hasProperty('write-locks')
+
+    if (writeLocks) {
+      println "Will write lock files for all projects"
+    } else {
+      println "Running in dry-run mode (use --write-locks to update lock files)"
+    }
+  }
+
+  doLast {
+    allprojects.each { subproject ->
+      println "Processing project: ${subproject.name}"
+
+      subproject.configurations.configureEach { config ->
+        if (config.canBeResolved) {
+          println "  Resolving configuration: ${config.name}"
+          try {
+            config.resolve()
+          } catch (Exception e) {
+            println "  Could not resolve configuration ${config.name}: ${e.message}"
+          }
+        }
+      }
+    }
+
+    println "Dependency resolution completed. Lock files generated."
+  }
+}
+
+// Hook into project evaluation to make sure --write-locks is handled
+gradle.allprojects { proj ->
+  proj.afterEvaluate {
+    if (gradle.startParameter.taskNames.contains('resolveAndLockAll') &&
+      gradle.startParameter.projectProperties.containsKey('write-locks')) {
+      proj.dependencyLocking {
+        lockAllConfigurations()
+        lockMode = LockMode.STRICT
+      }
+    }
+  }
+}

@@ -1,0 +1,209 @@
+// JaCoCo configuration for code coverage reporting
+apply plugin: 'jacoco'
+
+// Define project extension for configuring coverage exclusions
+// This allows customizing exclusions in each project's build.gradle file
+ext {
+  modulesExcludedFromCoverage = [
+    // Add modules that should be excluded from coverage requirements
+    // Example: 'demo-module', 'example-module'
+  ]
+  jacocoExclusions = [
+    // Data and model classes (no business logic)
+    '*.dto.*',                    // Data transfer objects
+    '*.entity.*',                 // Database entities
+    '*.model.*',                  // Model classes
+    '**/*Config*',                // Configuration classes
+    '**/*Constants*',             // Constants classes
+
+    // Exception classes (definition only)
+    '*.exception.*',              // Exception classes
+    '**/*Exception*',             // Exception classes by name pattern
+
+    // Annotations (definition only) - UPDATED TO COVER ALL ANNOTATION CLASSES
+    '*.annotation.*',             // Annotation packages
+    '**/*Annotation*',            // Annotation classes by name pattern
+    '**/annotation/**',           // All files in annotation directories
+    '**/*Cacheable*',             // Cacheable annotation classes (includes BulkCacheable)
+    '**/*CacheEvict*',            // CacheEvict annotation classes (includes BulkCacheEvict)
+    '**/*CachePut*',              // CachePut annotation classes (includes BulkCachePut)
+
+    // Spring Boot auto-configuration classes (mostly definition)
+    '**/*AutoConfiguration*',     // Auto-configuration classes
+    '**/*Configuration*',         // Configuration classes (includes AspectConfiguration)
+    '**/autoconfigure/**',        // All autoconfiguration packages
+
+    // Properties and configuration binding classes
+    '**/*Properties*',            // Configuration properties classes (includes BulkCacheProperties)
+    '**/config/**',               // All config packages
+
+    // Data classes and value objects (Kotlin)
+    '**/*\$Companion*',           // Kotlin companion objects
+    '**/*\$WhenMappings*',        // Kotlin when mappings
+    '**/*\$DefaultImpls*',        // Kotlin interface default implementations
+
+    // Application and framework classes
+    '*Application',               // Main application class
+    '*Application\$*',            // Application nested classes
+    '*ApplicationKt',             // Kotlin main function files
+    '*ApplicationKt\$*',          // Kotlin main function nested classes
+
+    // Auto-generated classes
+    '**/*\$\$serializer*',        // Kotlinx serialization
+    '**/*\$Creator*',             // Android Parcelable creators
+
+    // Builder pattern classes (often boilerplate)
+    '**/*Builder*',               // Builder classes
+
+    // Context and configuration classes
+    '*.context.*',                // Context classes
+    '**/*Context*'                // Context classes by name
+  ]
+}
+
+jacoco {
+  toolVersion = "${jacoco_version}" // Use version from gradle.properties
+}
+
+// Configure the JaCoCo test report
+jacocoTestReport {
+  dependsOn test
+  reports {
+    xml.required = true // XML report needed for coverage tools in CI
+    csv.required = true // CSV report used for badge generation
+    html.required = true
+    html.outputLocation = layout.buildDirectory.dir('reports/jacoco')
+  }
+
+  afterEvaluate {
+    classDirectories.setFrom(files(classDirectories.files.collect {
+      fileTree(dir: it, excludes: project.jacocoExclusions)
+    }))
+  }
+}
+
+// Enforce minimum code coverage thresholds
+jacocoTestCoverageVerification {
+  dependsOn jacocoTestReport
+  violationRules {
+    rule {
+      limit {
+        minimum = project.findProperty('code_coverage_minimum') as BigDecimal // Use threshold from gradle.properties
+      }
+    }
+
+    // Class-level coverage rule - exclude classes without business logic
+    rule {
+      element = 'CLASS'
+      excludes = project.jacocoExclusions
+      limit {
+        counter = 'INSTRUCTION'
+        value = 'COVEREDRATIO'
+        minimum = project.findProperty('code_coverage_minimum') as BigDecimal
+      }
+    }
+  }
+}
+
+// Make check depend on coverage verification
+check.dependsOn jacocoTestCoverageVerification
+
+// Make the test task run coverage verification
+test {
+  finalizedBy jacocoTestReport
+}
+
+// Ensure coverage verification runs when tests run
+check {
+  dependsOn jacocoTestCoverageVerification
+}
+
+// Root project aggregate tasks (only applied when this script is used by root project)
+if (project == rootProject) {
+  // Create an aggregate JaCoCo report that combines coverage from all submodules
+  task jacocoRootReport(type: JacocoReport) {
+    description = 'Generates an aggregate report from all subprojects'
+    group = 'reporting'
+
+    // Properly declare dependencies on all test tasks (including root project if it has tests)
+    dependsOn(subprojects.test)
+
+    // Also depend on root project test task if it exists
+    if (tasks.findByName('test')) {
+      dependsOn test
+    }
+
+    // Depend on all jacocoTestReport tasks from subprojects
+    subprojects.each { subproject ->
+      if (subproject.tasks.findByName('jacocoTestReport')) {
+        dependsOn subproject.jacocoTestReport
+      }
+    }
+
+    // Only collect execution data from subprojects, not root project
+    executionData fileTree(project.rootDir.absolutePath).include("**/build/jacoco/*.exec").exclude("build/jacoco/*.exec")
+
+    // Collect source and class files from all subprojects that have coverage enabled
+    subprojects.each { subproject ->
+      // Only include subprojects that aren't excluded from coverage
+      if (!rootProject.hasProperty('modulesExcludedFromCoverage') || !rootProject.modulesExcludedFromCoverage.contains(subproject.name)) {
+
+        if (subproject.plugins.hasPlugin('jacoco') && subproject.sourceSets.findByName('main')) {
+          sourceSets subproject.sourceSets.main
+        }
+      }
+    }
+
+    reports {
+      xml.required = true
+      csv.required = true
+      html.required = true
+      xml.outputLocation = layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.xml')
+      csv.outputLocation = layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.csv')
+      html.outputLocation = layout.buildDirectory.dir('reports/jacoco/test/html')
+    }
+
+    // Apply exclusions defined in this script
+    afterEvaluate {
+      classDirectories.setFrom(files(classDirectories.files.collect {
+        fileTree(dir: it, excludes: project.jacocoExclusions)
+      }))
+    }
+  }
+
+  // Aggregate coverage verification
+  task jacocoRootCoverageVerification(type: JacocoCoverageVerification) {
+    description = 'Verifies code coverage metrics for the entire project'
+    group = 'verification'
+    dependsOn jacocoRootReport
+
+    executionData fileTree(project.rootDir.absolutePath).include("**/build/jacoco/*.exec")
+
+    // Collect source and class files from all subprojects that have coverage enabled
+    subprojects.each { subproject ->
+      if (!rootProject.hasProperty('modulesExcludedFromCoverage') || !rootProject.modulesExcludedFromCoverage.contains(subproject.name)) {
+
+        if (subproject.plugins.hasPlugin('jacoco')) {
+          sourceSets subproject.sourceSets.main
+        }
+      }
+    }
+
+    violationRules {
+      rule {
+        limit {
+          minimum = project.findProperty('code_coverage_minimum') as BigDecimal
+        }
+      }
+    }
+
+    afterEvaluate {
+      classDirectories.setFrom(files(classDirectories.files.collect {
+        fileTree(dir: it, excludes: project.jacocoExclusions)
+      }))
+    }
+  }
+
+  // Make check depend on aggregate coverage verification
+  check.dependsOn jacocoRootCoverageVerification
+}

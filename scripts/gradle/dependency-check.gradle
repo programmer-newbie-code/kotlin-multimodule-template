@@ -1,0 +1,67 @@
+// OWASP Dependency Check configuration for security vulnerability scanning
+apply plugin: 'org.owasp.dependencycheck'
+
+dependencyCheck {
+  formats = ['HTML', 'JSON']
+  autoUpdate = true
+  suppressionFile = file("$rootDir/owasp-suppressions.xml")
+
+  // Fail build on critical/high vulnerabilities
+  failBuildOnCVSS = 7.0
+
+  analyzers {
+    experimentalEnabled = false
+    archiveEnabled = false
+    jarEnabled = true
+    centralEnabled = true
+    nexusEnabled = false
+    pyDistributionEnabled = false
+    pyPackageEnabled = false
+    rubygemsEnabled = false
+    opensslEnabled = false
+    cmakeEnabled = false
+    autoconfEnabled = false
+    composerEnabled = false
+    nodeEnabled = false
+    nuspecEnabled = false
+    cocoapodsEnabled = false
+    swiftEnabled = false
+    bundleAuditEnabled = false
+  }
+
+  // Output directory for reports
+  outputDirectory = file("$buildDir/reports/dependency-check")
+
+  // Skip configurations that don't need to be checked
+  skipConfigurations = ['compileClasspath', 'testCompileClasspath']
+
+  // Scan only runtime dependencies by default
+  scanConfigurations = ['runtimeClasspath']
+
+  // Cache directory to speed up subsequent runs
+  data {
+    directory = file("$rootDir/.gradle/dependency-check-data")
+  }
+
+  // Configure NVD API if key is available
+  nvd {
+    // Use NVD API key from environment variable if available
+    apiKey = System.getenv('NVD_API_KEY') ?: project.findProperty('nvd.api.key') ?: ''
+    // Delay between API calls (in milliseconds) to avoid rate limiting
+    delay = apiKey ? 0 : 4000
+    // Set datafeed URL if using enterprise version
+    datafeedUrl = project.findProperty('nvd.datafeed.url') ?: ''
+  }
+}
+
+// Task to print dependency check configuration - useful for debugging
+task printDependencyCheckConfig {
+  doLast {
+    println "OWASP Dependency Check Configuration for ${project.name}:"
+    println "  - Formats: ${dependencyCheck.formats}"
+    println "  - CVSS Threshold: ${dependencyCheck.failBuildOnCVSS}"
+    println "  - Suppression File: ${dependencyCheck.suppressionFile}"
+    println "  - Output Directory: ${dependencyCheck.outputDirectory}"
+    println "  - NVD API Key: ${dependencyCheck.nvd.apiKey ? 'Configured' : 'Not configured (will use slower datafeed)'}"
+  }
+}

@@ -1,0 +1,140 @@
+// Gradle Versions Plugin configuration for dependency updates
+apply plugin: 'com.github.ben-manes.versions'
+
+dependencyUpdates {
+  // Reject pre-release versions unless the current version is a pre-release
+  rejectVersionIf {
+    candidate.version.contains('-alpha') ||
+      candidate.version.contains('-beta') ||
+      candidate.version.contains('-rc') ||
+      candidate.version.contains('-M') ||
+      candidate.version.contains('-SNAPSHOT') ||
+      candidate.version.contains('.Alpha') ||
+      candidate.version.contains('.Beta') ||
+      candidate.version.contains('.RC')
+  }
+
+  // Check for updates to buildscript dependencies
+  checkBuildEnvironmentConstraints = true
+
+  // Output format
+  outputFormatter = "json"
+  outputDir = "build/reports/dependencyUpdates"
+
+  // Revision levels to check
+  revision = "release"
+
+  // Group modules by their group ID
+  gradleReleaseChannel = "current"
+
+  // Additional configuration for better reporting
+  checkConstraints = true
+  checkForGradleUpdate = true
+
+  // Filter out specific dependencies that should not be updated
+  // (useful for dependencies with special version constraints)
+  resolutionStrategy {
+    componentSelection { rules ->
+      rules.all { ComponentSelection selection ->
+        boolean rejected = ['alpha', 'beta', 'rc', 'cr', 'm', 'preview', 'b', 'ea'].any { qualifier ->
+          selection.candidate.version ==~ /(?i).*[.-]${qualifier}[.\d-+]*/
+        }
+        if (rejected) {
+          selection.reject('Release candidate')
+        }
+      }
+    }
+  }
+}
+
+// Task to check for outdated dependencies with detailed output
+task checkOutdatedDependencies {
+  dependsOn dependencyUpdates
+
+  doLast {
+    def reportFile = file("$buildDir/reports/dependencyUpdates/report.json")
+    if (reportFile.exists()) {
+      def json = new groovy.json.JsonSlurper().parseText(reportFile.text)
+
+      println "📦 Dependency Update Report for ${project.name}:"
+      println "=" * 60
+
+      if (json.outdated?.dependencies) {
+        println "📈 Outdated Dependencies (${json.outdated.dependencies.size()}):"
+        json.outdated.dependencies.each { dep ->
+          println "  • ${dep.group}:${dep.name} ${dep.version} → ${dep.available.release ?: dep.available.milestone}"
+        }
+      } else {
+        println "✅ All dependencies are up to date!"
+      }
+
+      if (json.gradle?.current && json.gradle?.running) {
+        if (json.gradle.current.version != json.gradle.running.version) {
+          println "\n🔧 Gradle Update Available:"
+          println "  • Current: ${json.gradle.running.version} → Available: ${json.gradle.current.version}"
+        } else {
+          println "\n✅ Gradle is up to date (${json.gradle.current.version})"
+        }
+      }
+
+      if (json.exceeded?.dependencies) {
+        println "\n⚠️  Dependencies exceeding latest version (${json.exceeded.dependencies.size()}):"
+        json.exceeded.dependencies.each { dep ->
+          println "  • ${dep.group}:${dep.name} ${dep.version} (using newer than ${dep.available.release})"
+        }
+      }
+    }
+  }
+}
+
+// Task to generate dependency update summary for CI/CD
+task generateDependencyUpdateSummary {
+  dependsOn dependencyUpdates
+
+  doLast {
+    def reportFile = file("$buildDir/reports/dependencyUpdates/report.json")
+    def summaryFile = file("$buildDir/reports/dependencyUpdates/summary.txt")
+
+    if (reportFile.exists()) {
+      def json = new groovy.json.JsonSlurper().parseText(reportFile.text)
+      def summary = []
+
+      summary << "Dependency Update Summary for ${project.name}"
+      summary << "Generated: ${new Date()}"
+      summary << "=" * 50
+
+      def outdatedCount = json.outdated?.dependencies?.size() ?: 0
+      def upToDateCount = json.current?.dependencies?.size() ?: 0
+      def exceededCount = json.exceeded?.dependencies?.size() ?: 0
+
+      summary << "Statistics:"
+      summary << "  • Up to date: ${upToDateCount}"
+      summary << "  • Outdated: ${outdatedCount}"
+      summary << "  • Exceeded: ${exceededCount}"
+      summary << ""
+
+      if (outdatedCount > 0) {
+        summary << "Outdated Dependencies:"
+        json.outdated.dependencies.each { dep ->
+          summary << "  • ${dep.group}:${dep.name} ${dep.version} → ${dep.available.release ?: dep.available.milestone}"
+        }
+      }
+
+      summaryFile.text = summary.join('\n')
+      println "📋 Dependency update summary saved to: ${summaryFile}"
+    }
+  }
+}
+
+// Task to print dependency updates configuration - useful for debugging
+task printDependencyUpdatesConfig {
+  doLast {
+    println "Dependency Updates Configuration for ${project.name}:"
+    println "  - Output Directory: ${dependencyUpdates.outputDir}"
+    println "  - Output Formatter: ${dependencyUpdates.outputFormatter}"
+    println "  - Revision: ${dependencyUpdates.revision}"
+    println "  - Check Build Environment: ${dependencyUpdates.checkBuildEnvironmentConstraints}"
+    println "  - Check for Gradle Updates: ${dependencyUpdates.checkForGradleUpdate}"
+    println "  - Gradle Release Channel: ${dependencyUpdates.gradleReleaseChannel}"
+  }
+}

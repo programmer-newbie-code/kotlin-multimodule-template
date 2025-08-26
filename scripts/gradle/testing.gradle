@@ -1,0 +1,75 @@
+// Common testing configuration for all modules
+apply plugin: 'java'
+
+// Testing configuration for the project
+// This script configures test execution to filter tests by group
+
+// Configure all test tasks
+tasks.withType(Test).configureEach {
+  // Use TestNG for testing
+  useTestNG {
+    // By default, only run tests with the 'small' group (unit tests)
+    includeGroups 'small'
+
+    // Allow specifying additional groups via command line
+    if (project.hasProperty('testGroups')) {
+      includeGroups project.getProperty('testGroups').split(',')
+    }
+
+    // Allow running all tests with the 'all' property
+    if (project.hasProperty('all')) {
+      includeGroups = []
+    }
+
+    // Increase test output verbosity if needed
+    testLogging {
+      events "passed", "skipped", "failed"
+      showStandardStreams = project.hasProperty('verbose')
+    }
+  }
+
+  // Run tests in parallel if possible
+  maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
+
+  // Always run all tests, don't stop on first failure
+  failFast = false
+}
+
+// Register task to run all tests including integration tests (only if not already exists)
+if (!tasks.findByName('allTests')) {
+  tasks.register('allTests') {
+    description = 'Run all tests including integration tests'
+    group = 'verification'
+    dependsOn tasks.test
+
+    doFirst {
+      tasks.test.configure {
+        useTestNG {
+          includeGroups = []
+        }
+      }
+    }
+  }
+}
+
+// Register a task specifically for integration tests (only if not already exists)
+if (!tasks.findByName('integrationTest')) {
+  tasks.register('integrationTest', Test) {
+    description = 'Run only integration tests'
+    group = 'verification'
+
+    useTestNG {
+      includeGroups 'medium', 'integration'
+    }
+  }
+}
+
+// Hook into the check task to ensure code coverage is verified
+tasks.named('check').configure {
+  dependsOn tasks.test
+
+  // Add jacoco test coverage verification if JaCoCo is applied
+  if (project.plugins.hasPlugin('jacoco')) {
+    dependsOn tasks.jacocoTestCoverageVerification
+  }
+}

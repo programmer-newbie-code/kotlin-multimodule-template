@@ -1,0 +1,92 @@
+plugins {
+  id "org.jetbrains.kotlin.jvm" version "${kotlin_version}" apply false
+  id "org.jetbrains.kotlin.plugin.spring" version "${kotlin_version}" apply false
+  id "org.jetbrains.kotlin.plugin.allopen" version "${kotlin_version}" apply false
+  id "org.springframework.boot" version "${spring_boot_version}" apply false
+  id "io.spring.dependency-management" version "${spring_dependency_mgmt_version}" apply false
+  id "maven-publish"
+  id "jacoco" // Add JaCoCo plugin to the root project
+  id "org.owasp.dependencycheck" version "${owasp_dependency_check_version}"
+  id "com.github.jk1.dependency-license-report" version "${license_report_version}"
+  id "me.champeau.jmh" version "${jmh_version}" apply false
+  id "com.github.ben-manes.versions" version "${gradle_versions_version}"
+}
+
+apply plugin: "java"
+apply from: "$rootDir/scripts/gradle/tasks.gradle"
+
+// TODO: Change this to your organization's group ID
+// Example: io.programmernewbie.yourproject
+group = "io.programmernewbie.template"
+
+// Java toolchain setup should be inside subprojects that apply Java plugin
+allprojects {
+  // Repositories are already configured in settings.gradle
+  // Remove redundant repository configuration to fix warning
+
+  // Enable dependency locking for all configurations
+  dependencyLocking {
+    lockAllConfigurations()
+    lockMode = LockMode.STRICT // Forces all dependencies to be locked
+  }
+}
+
+subprojects {
+  apply from: "$rootDir/scripts/gradle/kotlin.gradle"
+  apply from: "$rootDir/scripts/gradle/testing.gradle" // Apply testing configuration
+  // Apply JMH performance testing configuration
+  apply from: "$rootDir/scripts/gradle/jmh.gradle"
+  apply plugin: "maven-publish"
+
+  // Only apply JaCoCo to modules not excluded from coverage
+  if (!project.rootProject.hasProperty('modulesExcludedFromCoverage') ||
+    !project.rootProject.modulesExcludedFromCoverage.contains(project.name)) {
+    apply from: "$rootDir/scripts/gradle/jacoco.gradle"
+  }
+
+  // This ensures each subproject processes its dependencies
+  configurations.all {
+    resolutionStrategy {
+      activateDependencyLocking()
+    }
+  }
+
+  // Only configure publishing for projects with source code
+  if (file("$projectDir/src").exists()) {
+    publishing {
+      publications {
+        maven(MavenPublication) {
+          groupId = project.group
+          artifactId = project.name
+          version = project.version ?: '0.0.1-SNAPSHOT'
+
+          from components.java
+        }
+      }
+
+      repositories {
+        maven {
+          name = "GitHubPackages"
+          // TODO: Change this to your organization's GitHub repository URL
+          url = uri("https://maven.pkg.github.com/programmer-newbie-code/kotlin-multimodule-template")
+          credentials {
+            username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") ?: ""
+            password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") ?: ""
+          }
+        }
+      }
+    }
+  }
+}
+
+ext {
+  license = "MIT"
+}
+
+// Apply configuration scripts for various tools
+apply from: "$rootDir/scripts/gradle/dependency-check.gradle"
+apply from: "$rootDir/scripts/gradle/license-report.gradle"
+apply from: "$rootDir/scripts/gradle/dependency-updates.gradle"
+
+// Apply JaCoCo script to root project to get the aggregate tasks
+apply from: "$rootDir/scripts/gradle/jacoco.gradle"

@@ -1,0 +1,117 @@
+name: Performance Testing
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'bulk-*/src/**/*.kt'
+      - 'bulk-*/src/**/*.java'
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Check if any JMH benchmarks exist
+      - name: Check for JMH benchmarks
+        id: check_benchmarks
+        run: |
+          if find . -path "*/src/jmh" -type d | grep -q .; then
+            echo "benchmarks_exist=true" >> $GITHUB_OUTPUT
+            echo "✅ JMH benchmark directories found"
+          else
+            echo "benchmarks_exist=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No JMH benchmark directories found, skipping performance tests"
+          fi
+
+      # Run performance tests only if benchmarks exist
+      - name: Run performance benchmarks
+        if: steps.check_benchmarks.outputs.benchmarks_exist == 'true'
+        run: |
+          ./gradlew jmh --info
+          echo "Performance tests completed"
+
+      - name: Upload benchmark results
+        if: steps.check_benchmarks.outputs.benchmarks_exist == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            **/build/reports/jmh/
+            **/jmh-result.json
+          retention-days: 30
+
+      # Comment on PR with benchmark results (if available)
+      - name: Comment benchmark results on PR
+        if: github.event_name == 'pull_request' && steps.check_benchmarks.outputs.benchmarks_exist == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Look for JMH results
+            const findJmhResults = (dir) => {
+              const files = fs.readdirSync(dir, { withFileTypes: true });
+              for (const file of files) {
+                if (file.isDirectory()) {
+                  const result = findJmhResults(path.join(dir, file.name));
+                  if (result) return result;
+                } else if (file.name === 'jmh-result.json') {
+                  return path.join(dir, file.name);
+                }
+              }
+              return null;
+            };
+
+            try {
+              const resultsFile = findJmhResults('.');
+              if (resultsFile && fs.existsSync(resultsFile)) {
+                const results = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+
+                let comment = '## 🚀 Performance Benchmark Results\n\n';
+                comment += '| Benchmark | Score | Unit | Error |\n';
+                comment += '|-----------|-------|------|-------|\n';
+
+                results.forEach(result => {
+                  const score = result.primaryMetric.score.toFixed(2);
+                  const error = result.primaryMetric.scoreError.toFixed(2);
+                  const unit = result.primaryMetric.scoreUnit;
+                  comment += `| ${result.benchmark} | ${score} | ${unit} | ±${error} |\n`;
+                });
+
+                comment += '\n> 📊 Full benchmark report is available in the workflow artifacts.';
+
+                github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: comment
+                });
+              } else {
+                console.log('No JMH results found to comment on PR');
+              }
+            } catch (error) {
+              console.log('Error processing benchmark results:', error.message);
+            }

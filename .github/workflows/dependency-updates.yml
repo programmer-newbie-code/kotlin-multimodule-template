@@ -1,0 +1,88 @@
+name: Update Dependencies
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # Run weekly on Monday at 3 AM
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Update Gradle wrapper
+      - name: Update Gradle Wrapper
+        run: ./gradlew wrapper --gradle-version=latest
+
+      # Check for dependency updates
+      - name: Check for dependency updates
+        run: ./gradlew dependencyUpdates
+
+      # Update lock files with latest versions
+      - name: Update dependency lock files
+        run: ./gradlew resolveAndLockAll --write-locks
+
+      # Check if there are changes
+      - name: Check for changes
+        id: changes
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected in dependencies"
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+            echo "No dependency changes"
+          fi
+
+      # Create PR for dependency updates
+      - name: Create Pull Request
+        if: steps.changes.outputs.changes == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(deps): update dependencies and lock files'
+          title: '🔄 Automated Dependency Updates'
+          body: |
+            ## Automated Dependency Updates
+
+            This PR contains automated dependency updates:
+
+            - ⬆️ Updated Gradle wrapper (if newer version available)
+            - 🔒 Regenerated dependency lock files
+            - 📦 Updated to latest compatible versions
+
+            ### What's Changed
+            - Dependency versions updated to latest compatible releases
+            - Lock files regenerated to ensure reproducible builds
+
+            ### Testing
+            - [ ] All tests pass
+            - [ ] Security scan passes
+            - [ ] No breaking changes detected
+
+            > 🤖 This PR was automatically created by the dependency update workflow.
+            > Please review the changes and ensure all tests pass before merging.
+          branch: automated/dependency-updates
+          delete-branch: true
+          labels: |
+            dependencies
+            automated
+            chore

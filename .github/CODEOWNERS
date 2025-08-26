@@ -1,0 +1,20 @@
+# Global code owners - require review from these users for all changes
+* @programmer-newbie-code
+
+# Core library components - require additional scrutiny
+/core-module/ @programmer-newbie-code
+/scripts/ @programmer-newbie-code
+
+# Configuration files - require admin review
+/.github/ @programmer-newbie-code
+/gradle.properties @programmer-newbie-code
+/settings.gradle @programmer-newbie-code
+/build.gradle @programmer-newbie-code
+
+# Documentation - can be reviewed by any maintainer
+/docs/ @programmer-newbie-code
+*.md @programmer-newbie-code
+
+# Security-related files
+/SECURITY.md @programmer-newbie-code
+/.github/workflows/ @programmer-newbie-code

@@ -1,0 +1,33 @@
+remote_theme: just-the-docs/just-the-docs
+title: Kotlin Multimodule Template
+description: A starter template for building modular Kotlin applications
+baseurl: "/kotlin-multimodule-template"
+url: "https://programmer-newbie-code.github.io"
+
+# Enable search
+search_enabled: true
+
+# Enable copy code button
+enable_copy_code_button: true
+
+# Color scheme
+color_scheme: light
+
+# Aux links for the upper right navigation
+aux_links:
+  "GitHub Repository":
+    - "https://github.com/programmer-newbie-code/kotlin-multimodule-template"
+
+# Footer content
+footer_content: "Copyright &copy; 2025 Programmer Newbie IO. Distributed under the MIT License."
+
+# Collections for API documentation
+collections:
+  docs:
+    permalink: "/:collection/:path/"
+    output: true
+
+just_the_docs:
+  collections:
+    docs:
+      name: Documentation

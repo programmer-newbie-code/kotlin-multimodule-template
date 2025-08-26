@@ -1,0 +1,58 @@
+# GitHub Repository Template Configuration
+
+# Template Metadata
+template_name: "Kotlin Multimodule Template"
+template_description: "A production-ready Kotlin multimodule template for Spring Boot applications with 85% test coverage, TestNG groups, and Spring-Kotlin integration"
+
+# Files to process during template creation
+template_files:
+  - "**/*.kt"
+  - "**/*.gradle"
+  - "**/*.md"
+  - "settings.gradle"
+  - "gradle.properties"
+
+# Template variables that will be replaced
+template_variables:
+  # Package naming
+  TEMPLATE_PACKAGE: "io.programmernewbie.template"
+  TEMPLATE_GROUP_ID: "io.programmernewbie.template"
+  TEMPLATE_ARTIFACT_PREFIX: "kotlin-multimodule-template"
+
+  # Project naming
+  TEMPLATE_PROJECT_NAME: "kotlin-multimodule-template"
+  TEMPLATE_MAIN_CLASS: "KotlinMultimoduleTemplateApplication"
+
+  # Organization
+  TEMPLATE_ORG: "programmer-newbie-code"
+  TEMPLATE_GITHUB_URL: "https://github.com/programmer-newbie-code/kotlin-multimodule-template"
+
+# Instructions for template users
+setup_instructions: |
+  After creating a repository from this template:
+
+  1. Run the customization script:
+     - Linux/Mac: ./customize.sh
+     - Windows: ./customize.ps1
+
+  2. Or manually update:
+     - Replace package names in all .kt files
+     - Update project name in settings.gradle
+     - Update group ID in build.gradle
+     - Update GitHub URLs for publishing
+
+  3. Test your setup:
+     - ./gradlew build
+     - ./gradlew test -PtestGroups=small
+
+# Features included in this template
+features:
+  - "Kotlin multimodule architecture (2 modules)"
+  - "Spring Boot with Spring-Kotlin integration (allopen plugin)"
+  - "TestNG with groups (small, medium, integration)"
+  - "85% minimum test coverage with JaCoCo"
+  - "Dependency locking for reproducible builds"
+  - "GitHub Actions CI/CD ready"
+  - "Comprehensive documentation"
+  - "Code quality tools (OWASP, license reporting)"
+  - "Customization scripts for easy setup"

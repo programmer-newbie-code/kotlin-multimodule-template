@@ -1,0 +1,17 @@
+rootProject.name = "kotlin-multimodule-template"
+
+// Enable Gradle Feature Preview if using Gradle 8+
+enableFeaturePreview("STABLE_CONFIGURATION_CACHE")
+
+// Dependency resolution settings
+dependencyResolutionManagement {
+  repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+  repositories {
+    mavenCentral()
+  }
+}
+
+// Auto-include all folders with build.gradle or build.gradle.kts
+file(".").listFiles()
+  .findAll { it.isDirectory() && (new File(it, "build.gradle").exists() || new File(it, "build.gradle.kts").exists()) }
+  .each { include it.name }

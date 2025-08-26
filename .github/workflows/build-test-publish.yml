@@ -1,0 +1,385 @@
+name: Build, Test, and Publish
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      checks: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for code coverage reporting
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@v2
+        continue-on-error: true  # Don't fail the entire build if validation times out
+        timeout-minutes: 2       # Set a reasonable timeout
+
+      - name: Fallback wrapper validation
+        if: failure()
+        run: |
+          echo "⚠️ Gradle wrapper validation timed out, performing local validation"
+          # Basic validation - check if wrapper files exist and are executable
+          if [ -f "./gradlew" ] && [ -x "./gradlew" ]; then
+            echo "✅ Gradle wrapper executable found"
+          else
+            echo "❌ Gradle wrapper not found or not executable"
+            exit 1
+          fi
+
+          if [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "✅ Gradle wrapper JAR found"
+          else
+            echo "❌ Gradle wrapper JAR not found"
+            exit 1
+          fi
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      - name: Run tests with coverage
+        run: ./gradlew test jacocoRootReport
+
+      - name: Check if coverage report exists
+        id: check_coverage
+        run: |
+          # Look for the aggregate JaCoCo CSV report in the root project
+          if [ -f "build/reports/jacoco/test/jacocoTestReport.csv" ]; then
+            echo "coverage_report=build/reports/jacoco/test/jacocoTestReport.csv" >> $GITHUB_OUTPUT
+            echo "coverage_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Found aggregate coverage report: build/reports/jacoco/test/jacocoTestReport.csv"
+          else
+            echo "coverage_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No aggregate JaCoCo coverage report found"
+            echo "Looking for any CSV reports..."
+            find . -name "jacocoTestReport.csv" -type f || echo "No CSV reports found anywhere"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-files
+          path: |
+            bulk-*/build/libs/*.jar
+            !bulk-*/build/libs/*-plain.jar
+          retention-days: 7
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            **/build/reports/jacoco/
+            **/build/reports/tests/
+          retention-days: 7
+
+      # Create badges directory to ensure it exists
+      - name: Create badges directory
+        run: mkdir -p .github/badges
+
+      - name: Generate JaCoCo Badge
+        if: steps.check_coverage.outputs.coverage_exists == 'true'
+        id: jacoco
+        uses: cicirello/jacoco-badge-generator@v2
+        with:
+          generate-branches-badge: false
+          jacoco-csv-file: ${{ steps.check_coverage.outputs.coverage_report }}
+          badges-directory: .github/badges
+          coverage-badge-filename: jacoco.svg
+          fail-if-coverage-less-than: 85
+
+      - name: Log coverage percentage
+        if: steps.check_coverage.outputs.coverage_exists == 'true'
+        run: |
+          echo "Coverage percentage: ${{ steps.jacoco.outputs.coverage }}%"
+          echo "Branch coverage: ${{ steps.jacoco.outputs.branches }}%"
+
+      # Convert decimal coverage values to percentages for display
+      - name: Convert coverage values
+        if: steps.check_coverage.outputs.coverage_exists == 'true'
+        id: coverage_conversion
+        run: |
+          # JaCoCo badge generator outputs as decimal (0.95 = 95%)
+          COVERAGE_RAW="${{ steps.jacoco.outputs.coverage }}"
+          BRANCH_RAW="${{ steps.jacoco.outputs.branches }}"
+
+          # Convert to percentage if value is less than 1 (decimal format)
+          if (( $(echo "$COVERAGE_RAW < 1" | bc -l) )); then
+            COVERAGE_PCT=$(echo "$COVERAGE_RAW * 100" | bc -l | xargs printf "%.2f\n")
+          else
+            COVERAGE_PCT=$COVERAGE_RAW
+          fi
+
+          if (( $(echo "$BRANCH_RAW < 1" | bc -l) )); then
+            BRANCH_PCT=$(echo "$BRANCH_RAW * 100" | bc -l | xargs printf "%.2f\n")
+          else
+            BRANCH_PCT=$BRANCH_RAW
+          fi
+
+          echo "coverage_display=${COVERAGE_PCT}" >> $GITHUB_OUTPUT
+
+          # Set boolean flag for pass/fail status (only coverage, no branch coverage)
+          COVERAGE_PASS=$(echo "$COVERAGE_PCT >= 85" | bc -l)
+
+          echo "coverage_pass=${COVERAGE_PASS}" >> $GITHUB_OUTPUT
+
+          echo "Converted coverage values:"
+          echo "  Overall: ${COVERAGE_PCT}% (pass: ${COVERAGE_PASS})"
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request' && steps.check_coverage.outputs.coverage_exists == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          message: |
+            ## 📊 Coverage Report
+
+            | Metric | Coverage | Status |
+            |--------|----------|--------|
+            | **Overall Coverage** | ${{ steps.coverage_conversion.outputs.coverage_display }}% | ${{ steps.coverage_conversion.outputs.coverage_pass == '1' && '✅ PASS' || '❌ FAIL' }} |
+
+            ### Requirements
+            - ✅ **Minimum Overall Coverage:** 85%
+
+            ${{ steps.coverage_conversion.outputs.coverage_pass == '0' && format('{0}', '> [!WARNING]
+            > **Coverage Below Threshold!**
+            >
+            > Your overall code coverage ({0}%) is below the required 85% minimum.
+            > Please add more tests to increase coverage before this PR can be merged.
+            >
+            > **Need help?** Check our [testing guidelines](../CONTRIBUTING.md#testing-requirements) for best practices.', steps.coverage_conversion.outputs.coverage_display) || '> [!NOTE]
+            > **Coverage Requirements Met!** ✅
+            >
+            > Great job maintaining good test coverage!' }}
+
+            ### 📈 Coverage Details
+            You can download the full coverage report from the **Artifacts** section of this workflow run.
+
+      - name: Comment when no coverage report exists
+        if: github.event_name == 'pull_request' && steps.check_coverage.outputs.coverage_exists == 'false'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          message: |
+            ## 📊 Coverage Report
+
+            ⚠️ **No coverage report found**
+
+            It appears that no JaCoCo coverage report was generated for this PR. This could happen if:
+            - No tests were run
+            - JaCoCo is not properly configured
+            - Tests exist but coverage reporting is disabled
+
+            Please ensure:
+            1. Tests are written and executed: `./gradlew test`
+            2. Coverage reports are generated: `./gradlew jacocoTestReport`
+            3. Check the build logs for any errors
+
+            > **Note**: All PRs require minimum 85% code coverage to be merged.
+
+      - name: Verify minimum coverage threshold
+        if: steps.check_coverage.outputs.coverage_exists == 'true'
+        run: ./gradlew jacocoRootCoverageVerification
+
+      # Add a step that explicitly fails the build if coverage is too low (for branch protection)
+      - name: Check coverage threshold for PR
+        if: github.event_name == 'pull_request' && steps.check_coverage.outputs.coverage_exists == 'true'
+        run: |
+          COVERAGE=${{ steps.jacoco.outputs.coverage }}
+          BRANCH_COVERAGE=${{ steps.jacoco.outputs.branches }}
+
+          echo "Checking coverage thresholds..."
+          echo "Overall coverage: ${COVERAGE}%"
+          echo "Branch coverage: ${BRANCH_COVERAGE}%"
+
+          # Convert decimal format to percentage if needed
+          # JaCoCo badge generator outputs as decimal (0.95 = 95%)
+          if (( $(echo "$COVERAGE < 1" | bc -l) )); then
+            COVERAGE_PCT=$(echo "$COVERAGE * 100" | bc -l)
+            echo "Converted coverage from decimal: ${COVERAGE_PCT}%"
+          else
+            COVERAGE_PCT=$COVERAGE
+          fi
+
+          if (( $(echo "$BRANCH_COVERAGE < 1" | bc -l) )); then
+            BRANCH_COVERAGE_PCT=$(echo "$BRANCH_COVERAGE * 100" | bc -l)
+            echo "Converted branch coverage from decimal: ${BRANCH_COVERAGE_PCT}%"
+          else
+            BRANCH_COVERAGE_PCT=$BRANCH_COVERAGE
+          fi
+
+          if (( $(echo "$COVERAGE_PCT < 85" | bc -l) )); then
+            echo "❌ Overall coverage ${COVERAGE_PCT}% is below the required 85% threshold"
+            exit 1
+          fi
+
+          echo "✅ All coverage thresholds met!"
+          echo "  - Overall coverage: ${COVERAGE_PCT}% (≥ 85% ✓)"
+
+      # Fail PR if no coverage report exists (enforce testing)
+      - name: Enforce coverage requirement for PR
+        if: github.event_name == 'pull_request' && steps.check_coverage.outputs.coverage_exists == 'false'
+        run: |
+          echo "⚠️ No coverage report found - checking if code changes were made..."
+
+          # Check if any Java/Kotlin source files were modified in this PR
+          # Only enforce coverage for PRs that modify actual source code
+          CODE_CHANGES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -E '\.(java|kt)$' | head -10 || echo "")
+
+          if [ -n "$CODE_CHANGES" ]; then
+            echo "❌ Code changes detected but no coverage report found"
+            echo "Modified source files:"
+            echo "$CODE_CHANGES"
+            echo ""
+            echo "Coverage reports are required when source code is modified."
+            echo "Please ensure tests are written and coverage reports are generated:"
+            echo "  ./gradlew test jacocoTestReport"
+            exit 1
+          else
+            echo "✅ No source code changes detected - coverage report not required"
+            echo "This PR appears to contain only:"
+            echo "- Documentation updates"
+            echo "- Configuration changes"
+            echo "- CI/CD workflow updates"
+            echo "- Other non-source files"
+            echo ""
+            echo "Coverage validation skipped for non-code changes."
+          fi
+
+      # Commit the badges to the repository (only on main branch)
+      - name: Commit and push badges if changed
+        if: github.ref == 'refs/heads/main' && steps.check_coverage.outputs.coverage_exists == 'true'
+        uses: EndBug/add-and-commit@v9
+        with:
+          default_author: github_actions
+          message: 'docs: update code coverage badges [skip ci]'
+          add: '.github/badges/jacoco.svg'
+          pull: '--rebase --autostash'  # Handle conflicts gracefully
+        continue-on-error: true  # Don't fail the workflow if badge commit fails
+
+  # Development release job - runs when pushing a tag with -dev suffix
+  dev-release:
+    needs: build-and-test
+    if: success() && startsWith(github.ref, 'refs/tags/v') && endsWith(github.ref, '-dev')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: jar-files
+          path: artifacts
+
+      - name: Generate Release Version
+        id: generate_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Development Release
+        id: create_dev_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Development Release ${{ steps.generate_version.outputs.VERSION }}
+          files: |
+            artifacts/**/*.jar
+          body: |
+            Development build for testing purposes.
+            This is a prerelease build and not intended for production use.
+          draft: false
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Save artifact to repository (similar to a local Maven repository)
+      - name: Create Artifact Directory Structure
+        run: |
+          mkdir -p .repo/dev-releases/${{ steps.generate_version.outputs.VERSION }}
+          cp artifacts/**/*.jar .repo/dev-releases/${{ steps.generate_version.outputs.VERSION }}/
+
+      - name: Commit and Push Dev Artifacts
+        uses: EndBug/add-and-commit@v9
+        with:
+          add: '.repo/dev-releases/${{ steps.generate_version.outputs.VERSION }}/*'
+          message: 'Add development artifacts for ${{ steps.generate_version.outputs.VERSION }}'
+          push: true
+
+  # Production release job - runs when pushing a tag without -dev suffix
+  publish-release:
+    needs: build-and-test
+    if: success() && startsWith(github.ref, 'refs/tags/v') && !endsWith(github.ref, '-dev')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: jar-files
+          path: artifacts
+
+      - name: Generate Release Version
+        id: generate_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Production Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.generate_version.outputs.VERSION }}
+          files: |
+            artifacts/**/*.jar
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          ./gradlew publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

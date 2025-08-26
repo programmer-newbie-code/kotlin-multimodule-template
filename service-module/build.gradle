@@ -1,0 +1,20 @@
+apply from: "$rootDir/scripts/gradle/spring_library.gradle"
+
+dependencies {
+  // Spring dependencies
+  implementation "org.springframework.boot:spring-boot-starter"
+  implementation "org.springframework.boot:spring-boot-starter-data-jpa"
+  implementation "org.springframework:spring-tx"
+
+  // Validation
+  implementation "org.springframework.boot:spring-boot-starter-validation"
+
+  // Kotlin Coroutines
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlin_coroutines_version"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-reactor:$kotlin_coroutines_version"
+
+  // Testing dependencies
+  testImplementation "org.testng:testng:$testng_version"
+  testImplementation "io.mockk:mockk:$mockk_version"
+  testImplementation "org.springframework.boot:spring-boot-starter-test"
+}
