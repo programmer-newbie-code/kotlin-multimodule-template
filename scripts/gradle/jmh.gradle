@@ -1,0 +1,123 @@
+// JMH (Java Microbenchmark Harness) configuration for performance testing
+// This script is applied to projects that have benchmark tests in src/jmh directory
+
+// Only apply JMH plugin if the project has benchmark source directory
+if (file("$projectDir/src/jmh").exists()) {
+  apply plugin: "me.champeau.jmh"
+
+  jmh {
+    // JMH execution parameters
+    fork = 1                    // Number of forked JVMs
+    warmupIterations = 2        // Number of warmup iterations
+    iterations = 3              // Number of measurement iterations
+    timeUnit = 'ms'            // Time unit for results
+
+    // Output configuration
+    resultFormat = 'JSON'       // Output format (JSON for automation)
+    resultsFile = file("$buildDir/reports/jmh/jmh-result.json")
+
+    // Benchmark selection
+    includes = ['.*Benchmark.*'] // Include classes matching benchmark pattern
+
+    // Additional JMH options
+    benchmarkMode = ['avgt']    // Average time mode (can be: thrpt, avgt, sample, ss, all)
+    threads = 1                 // Number of worker threads
+
+    // JVM options for benchmarks
+    jvmArgs = [
+      '-server',              // Use server JVM
+      '-Xms512m',            // Initial heap size
+      '-Xmx1g',              // Maximum heap size
+      '-XX:+UseG1GC'         // Use G1 garbage collector for consistent performance
+    ]
+
+    // Profiler configuration (uncomment to enable)
+    // profilers = ['stack']    // Enable stack profiler
+    // profilers = ['gc']       // Enable GC profiler
+
+    // Human-readable output
+    humanOutputFile = file("$buildDir/reports/jmh/human.txt")
+
+    // Benchmark parameters (can be overridden in benchmark classes)
+    // benchmarkParameters = [
+    //     'size': ['100', '1000', '10000']
+    // ]
+  }
+
+  // Task to run benchmarks with custom configuration
+  task benchmarkPerformance(type: me.champeau.jmh.JmhBytecodeGeneratorTask) {
+    dependsOn classes
+
+    doLast {
+      println "🚀 Running performance benchmarks for ${project.name}..."
+      println "📊 Results will be available at: ${jmh.resultsFile.get()}"
+    }
+  }
+
+  // Task to run quick benchmarks (fewer iterations for development)
+  task benchmarkQuick {
+    dependsOn jmhClasses
+
+    doLast {
+      javaexec {
+        classpath = sourceSets.jmh.runtimeClasspath
+        main = 'org.openjdk.jmh.Main'
+        args = [
+          '-wi', '1',     // 1 warmup iteration
+          '-i', '1',      // 1 measurement iteration
+          '-f', '1',      // 1 fork
+          '-rf', 'json',  // JSON format
+          '-rff', "$buildDir/reports/jmh/quick-result.json"
+        ]
+      }
+      println "⚡ Quick benchmark completed. Results: $buildDir/reports/jmh/quick-result.json"
+    }
+  }
+
+  // Task to print JMH configuration - useful for debugging
+  task printJmhConfig {
+    doLast {
+      println "JMH Configuration for ${project.name}:"
+      println "  - Fork: ${jmh.fork.get()}"
+      println "  - Warmup Iterations: ${jmh.warmupIterations.get()}"
+      println "  - Measurement Iterations: ${jmh.iterations.get()}"
+      println "  - Time Unit: ${jmh.timeUnit.get()}"
+      println "  - Benchmark Mode: ${jmh.benchmarkMode.get()}"
+      println "  - Threads: ${jmh.threads.get()}"
+      println "  - Results File: ${jmh.resultsFile.get()}"
+      println "  - Includes: ${jmh.includes.get()}"
+    }
+  }
+
+  // Ensure JMH reports directory exists
+  tasks.register('createJmhReportsDir') {
+    doLast {
+      file("$buildDir/reports/jmh").mkdirs()
+    }
+  }
+
+  // Make JMH tasks depend on creating the reports directory
+  tasks.matching { it.name.startsWith('jmh') }.all {
+    dependsOn createJmhReportsDir
+  }
+
+} else {
+  // Create a placeholder task if no JMH source directory exists
+  task jmh {
+    doLast {
+      println "ℹ️  No JMH benchmarks found in ${project.name} (src/jmh directory doesn't exist)"
+      println "   To add performance benchmarks:"
+      println "   1. Create src/jmh/java directory"
+      println "   2. Add benchmark classes with @Benchmark annotations"
+      println "   3. Run './gradlew jmh' to execute benchmarks"
+    }
+  }
+
+  task benchmarkPerformance {
+    dependsOn jmh
+  }
+
+  task benchmarkQuick {
+    dependsOn jmh
+  }
+}

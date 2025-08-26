@@ -1,0 +1,56 @@
+// Common build configuration for Kotlin-based modules
+apply plugin: "org.jetbrains.kotlin.jvm"
+apply plugin: "org.jetbrains.kotlin.plugin.allopen"
+apply plugin: "java"
+
+// Configure allopen plugin for Spring annotations
+// This makes Kotlin classes open (non-final) when annotated with Spring annotations
+allOpen {
+  annotations(
+    "org.springframework.stereotype.Component",
+    "org.springframework.stereotype.Service",
+    "org.springframework.stereotype.Repository",
+    "org.springframework.stereotype.Controller",
+    "org.springframework.web.bind.annotation.RestController",
+    "org.springframework.boot.autoconfigure.SpringBootApplication",
+    "org.springframework.context.annotation.Configuration",
+    "org.springframework.transaction.annotation.Transactional"
+  )
+}
+
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
+  sourceCompatibility = JavaVersion.VERSION_21
+  targetCompatibility = JavaVersion.VERSION_21
+}
+
+kotlin {
+  jvmToolchain(21)
+
+  compilerOptions {
+    // -Xjsr305=strict ensures JSR-305 annotations are treated as nullability annotations with strict semantics
+    // This improves null-safety when working with Java libraries that use JSR-305 annotations
+    freeCompilerArgs.add("-Xjsr305=strict")
+  }
+}
+
+test {
+  useTestNG()
+}
+
+// Add core dependencies needed for Kotlin
+dependencies {
+  // Kotlin standard library - the versions are automatically resolved from the kotlin plugin version
+  // kotlin-stdlib-jdk8 includes JDK 7 and 8 extensions with Java interoperability
+  implementation "org.jetbrains.kotlin:kotlin-reflect"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib"
+
+  // Coroutines support for async programming
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlin_coroutines_version"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-reactive:$kotlin_coroutines_version"
+
+  // For Spring support specifically
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-reactor:$kotlin_coroutines_version"
+}

@@ -1,0 +1,162 @@
+name: Validate Naming Conventions
+
+on:
+  pull_request:
+    types: [ opened, edited, synchronize, reopened ]
+  push:
+    branches: [ main, dev ]
+
+jobs:
+  validate-pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR Title Format
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          echo "Validating PR title: '$PR_TITLE'"
+
+          # Check if PR title follows conventional commit format
+          if echo "$PR_TITLE" | grep -qE '^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .{3,}$'; then
+            echo "✅ PR title follows conventional commit format"
+
+            # Extract type and scope
+            TYPE=$(echo "$PR_TITLE" | sed -E 's/^([a-z]+)(\(.+\))?: .+$/\1/')
+
+            echo "📝 Type: $TYPE"
+
+            # Check if there's a scope
+            if echo "$PR_TITLE" | grep -q '('; then
+              SCOPE=$(echo "$PR_TITLE" | sed -E 's/^[a-z]+\((.+)\): .+$/\1/')
+              echo "📝 Scope: $SCOPE"
+            else
+              echo "📝 Scope: (none)"
+            fi
+          else
+            echo "❌ PR title does not follow conventional commit format"
+            echo ""
+            echo "Expected format: type(scope): description"
+            echo "Examples:"
+            echo "  - feat: add new caching layer"
+            echo "  - feat(redis): implement Redis cache adapter"
+            echo "  - fix(core): resolve memory leak in cache manager"
+            echo "  - docs: update API documentation"
+            echo "  - test(caffeine): add integration tests"
+            echo ""
+            echo "Valid types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+            echo "Valid scopes: core, redis, caffeine, spring, cache, config, api, deps, ci, docs, test, security"
+            echo ""
+            echo "📖 See our commit conventions: https://github.com/${{ github.repository }}/blob/main/docs/commit-conventions.md"
+            exit 1
+          fi
+
+  validate-commit-messages:
+    # Only validate commit messages if squash merging is disabled
+    # Since you use squash merging only, PR title validation is sufficient
+    if: false  # Disable this job completely for squash-merge-only repositories
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Commit Messages
+        run: |
+          echo "ℹ️ Commit message validation is disabled for squash-merge-only repositories"
+          echo "PR title validation ensures the final squashed commit follows conventional format"
+
+  validate-signed-commits:
+    # For now, make GPG validation informational only to avoid CI issues
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Don't fail the workflow if GPG validation fails
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check GPG Signatures (Informational)
+        run: |
+          echo "🔐 Checking GPG signatures for commits (informational only)..."
+
+          # Get list of commits to check
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # For PRs, check commits in the PR
+            COMMITS=$(git rev-list --no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+            echo "📋 Checking PR commits from ${{ github.event.pull_request.base.sha }} to ${{ github.event.pull_request.head.sha }}"
+          else
+            # For push events, check the pushed commits
+            if [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+              COMMITS=$(git rev-list ${{ github.event.before }}..${{ github.event.after }})
+              echo "📋 Checking push commits from ${{ github.event.before }} to ${{ github.event.after }}"
+            else
+              # First push to branch - check only the latest commit
+              COMMITS="${{ github.event.after }}"
+              echo "📋 Checking first push commit: ${{ github.event.after }}"
+            fi
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            echo "ℹ️ No commits to check"
+            exit 0
+          fi
+
+          SIGNED_COUNT=0
+          UNSIGNED_COUNT=0
+          TOTAL_COMMITS=0
+
+          for commit in $COMMITS; do
+            TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
+            COMMIT_MSG=$(git log --format=%s -n 1 "$commit")
+            AUTHOR=$(git log --format="%an <%ae>" -n 1 "$commit")
+
+            echo "Checking commit: $commit"
+            echo "Message: $COMMIT_MSG"
+            echo "Author: $AUTHOR"
+
+            # Check if commit has GPG signature using git log
+            GPG_SIG=$(git log --format="%G?" -n 1 "$commit")
+            SIGNER=$(git log --format="%GS" -n 1 "$commit")
+
+            case "$GPG_SIG" in
+              "G")
+                echo "✅ Valid GPG signature by: $SIGNER"
+                SIGNED_COUNT=$((SIGNED_COUNT + 1))
+                ;;
+              "U")
+                echo "⚠️ Good signature, unknown validity by: $SIGNER"
+                SIGNED_COUNT=$((SIGNED_COUNT + 1))
+                ;;
+              "B"|"X"|"Y"|"R"|"E")
+                echo "⚠️ Signature issue (status: $GPG_SIG)"
+                UNSIGNED_COUNT=$((UNSIGNED_COUNT + 1))
+                ;;
+              "N"|"")
+                echo "ℹ️ No GPG signature found"
+                UNSIGNED_COUNT=$((UNSIGNED_COUNT + 1))
+                ;;
+              *)
+                echo "❓ Unknown signature status: $GPG_SIG"
+                UNSIGNED_COUNT=$((UNSIGNED_COUNT + 1))
+                ;;
+            esac
+            echo ""
+          done
+
+          echo "📊 GPG Signature Summary:"
+          echo "Total commits: $TOTAL_COMMITS"
+          echo "Signed commits: $SIGNED_COUNT"
+          echo "Unsigned/problematic commits: $UNSIGNED_COUNT"
+
+          if [ $UNSIGNED_COUNT -gt 0 ]; then
+            echo ""
+            echo "💡 Note: Some commits may not have GPG signatures."
+            echo "While not enforced in CI, GPG signing is recommended for security."
+            echo "📖 See our GPG setup guide: https://github.com/${{ github.repository }}/blob/main/docs/gpg-setup.md"
+          else
+            echo "✅ All commits are GPG signed!"
+          fi
+
+          echo ""
+          echo "ℹ️ This check is informational only and won't fail the workflow."

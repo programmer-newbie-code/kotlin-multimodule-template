@@ -1,0 +1,23 @@
+// Spring library configuration - for modules that use Spring but are not executable applications
+// This provides Spring dependency management without the executable application features
+
+apply plugin: 'io.spring.dependency-management'
+apply from: "$rootDir/scripts/gradle/kotlin.gradle"
+apply from: "$rootDir/scripts/gradle/jacoco.gradle"
+apply from: "$rootDir/scripts/gradle/testing.gradle"
+
+// Apply dependency management from Spring Boot BOM for consistent versions
+dependencyManagement {
+  imports {
+    mavenBom "org.springframework.boot:spring-boot-dependencies:${spring_boot_version}"
+  }
+}
+
+// Standard library JAR configuration
+jar {
+  enabled = true
+  archiveClassifier = '' // Ensure no classifier for main jar
+}
+
+// No bootJar for libraries - they are not executable applications
+// This avoids the need to disable bootJar in each module

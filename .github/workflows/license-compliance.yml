@@ -1,0 +1,70 @@
+name: License and Compliance Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * 1'  # Run weekly on Monday at 2 AM
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Check for license compliance
+      - name: Generate license report
+        run: ./gradlew generateLicenseReport
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: build/reports/dependency-license/
+          retention-days: 30
+
+      # Check for restrictive licenses
+      - name: Check for restrictive licenses
+        run: |
+          # List of restrictive licenses to avoid
+          RESTRICTIVE_LICENSES=("GPL-2.0" "GPL-3.0" "AGPL-3.0" "LGPL-2.1" "LGPL-3.0" "CDDL-1.0" "EPL-1.0" "EPL-2.0")
+
+          if [ -f "build/reports/dependency-license/dependency-license.json" ]; then
+            for license in "${RESTRICTIVE_LICENSES[@]}"; do
+              if grep -q "$license" build/reports/dependency-license/dependency-license.json; then
+                echo "❌ Found restrictive license: $license"
+                echo "Please review dependencies with restrictive licenses"
+                exit 1
+              fi
+            done
+            echo "✅ No restrictive licenses found"
+          else
+            echo "⚠️ License report not found, skipping check"
+          fi
+
+      # Scan for secrets in new commits
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        continue-on-error: true  # Don't fail if scanning issues occur
+        with:
+          path: ./
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || 'HEAD~1') }}
+          head: HEAD
+          extra_args: --debug --only-verified
