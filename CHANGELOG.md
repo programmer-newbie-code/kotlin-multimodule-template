@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- Fix customize.ps1 (#2)
+
+### 📚 Documentation
+
+- Update changelog
+
 ### 🚀 Features
 
 - Initialize kotlin-multimodule-template (#1)
