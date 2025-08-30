@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🐛 Bug Fixes
 
 - Fix customize.ps1 (#2)
+- Fix workflow pages and branch protection (#3)
 
 ### 📚 Documentation
 
+- Update changelog
 - Update changelog
 
 ### 🚀 Features
