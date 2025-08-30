@@ -1,12 +1,11 @@
 name: Branch Protection Rules
 
 on:
-  # Disabled automatic triggers to prevent API permission issues
-  # when pushing directly to main branch
-  # push:
-  #   branches:
-  #     - main
-  workflow_dispatch:  # Allow manual triggering only
+  # Automatic trigger to apply branch protection rules when pushing to main
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Also allow manual triggering
 
 jobs:
   setup-branch-protection:
